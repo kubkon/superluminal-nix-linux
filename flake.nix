@@ -1,5 +1,5 @@
 {
-  description = "Nix package and development shell for the bundled Superluminal Linux distribution";
+  description = "Nix package and development shell for the Superluminal Linux distribution";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -84,15 +84,15 @@
 
           superluminal = pkgs.stdenvNoCC.mkDerivation {
             pname = "superluminal";
-            version = "local";
+            version = "1.0.7510.599-alpha";
 
-            src = lib.cleanSourceWith {
-              src = ./.;
-              filter = path: type:
-                let
-                  base = baseNameOf path;
-                in
-                !(base == ".git" || lib.hasPrefix "result" base);
+            # Fetch the official binary distribution instead of using ./. as
+            # the source. In a Git flake, untracked files are intentionally not
+            # included in the flake source, which makes packaging a locally
+            # unpacked vendor bundle unreliable unless every binary is tracked.
+            src = pkgs.fetchurl {
+              url = "https://superluminal.blob.core.windows.net/public-installers/SuperluminalLinux-1.0.7510.599-alpha.tar.gz";
+              hash = "sha256-fUcTGD6LvNtX0aQFeXJlMg4wdJmjyS8hJLGwsl3LZSo=";
             };
 
             nativeBuildInputs = with pkgs; [
@@ -189,7 +189,7 @@ EOF
             '';
 
             meta = {
-              description = "Superluminal Performance profiler packaged from a local vendor bundle";
+              description = "Superluminal Performance profiler packaged from the official Linux binary distribution";
               homepage = "https://superluminal.eu/";
               platforms = [ "x86_64-linux" ];
               mainProgram = "superluminal";
@@ -292,13 +292,12 @@ EOF
             QT_XKB_CONFIG_ROOT = "${pkgs.xkeyboard_config}/share/X11/xkb";
 
             shellHook = ''
-              export QT_PLUGIN_PATH="$PWD/Qt/plugins"
-              export LD_LIBRARY_PATH="$SUPERLUMINAL_RUNTIME_LIBRARY_PATH:$PWD:$PWD/Qt/lib:''${LD_LIBRARY_PATH:-}"
+              export LD_LIBRARY_PATH="$SUPERLUMINAL_RUNTIME_LIBRARY_PATH:''${LD_LIBRARY_PATH:-}"
               echo "Superluminal dev shell"
               echo "  Build package: nix build"
               echo "  Run GUI:       nix run"
               echo "  Run CLI:       nix run .#superluminalcmd -- --help"
-              echo "  Inspect deps:  scanelf -n Superluminal SuperluminalCmd"
+              echo "  Inspect deps:  nix build && scanelf -n result/opt/superluminal/Superluminal result/opt/superluminal/SuperluminalCmd"
             '';
           };
         });
