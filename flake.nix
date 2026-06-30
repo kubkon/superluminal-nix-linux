@@ -221,7 +221,59 @@ EOF
                 --prefix PATH : "${helperPath}"
               )
 
-              makeWrapper "$appDir/Superluminal" "$out/bin/superluminal" "''${commonWrapperArgs[@]}"
+              cat > "$out/bin/superluminal" <<EOF
+#!${pkgs.runtimeShell}
+export QT_PLUGIN_PATH="$appDir/Qt/plugins"
+export QT_XKB_CONFIG_ROOT="${pkgs.xkeyboard_config}/share/X11/xkb"
+export XDG_DATA_DIRS="${pkgs.gtk3}/share:${pkgs.gsettings-desktop-schemas}/share:${pkgs.hicolor-icon-theme}/share:\''${XDG_DATA_DIRS:-}"
+export LD_LIBRARY_PATH="${runtimeLibraryPath}:$appDir:$appDir/Qt/lib:\''${LD_LIBRARY_PATH:-}"
+export PATH="${helperPath}:\''${PATH:-}"
+
+# The upstream Linux alpha does not ship Qt's Wayland platform plugin. Use
+# XCB/XWayland by default instead of letting Wayland sessions select a missing
+# backend. Users can still override QT_QPA_PLATFORM explicitly.
+export QT_QPA_PLATFORM="\''${QT_QPA_PLATFORM:-xcb}"
+
+# Host Qt theme settings can reference plugins that are not in Superluminal's
+# bundled Qt tree, e.g. QT_STYLE_OVERRIDE=kvantum.
+unset QT_STYLE_OVERRIDE
+
+export QT_ENABLE_HIGHDPI_SCALING="\''${QT_ENABLE_HIGHDPI_SCALING:-1}"
+
+# Convenience knob for older Qt/XWayland setups where QT_SCALE_FACTOR alone may
+# not affect Superluminal's custom-rendered UI. It sets modern Qt scaling and
+# common font-DPI equivalents while still allowing explicit QT_* overrides.
+if [ -n "\''${SUPERLUMINAL_SCALE:-}" ]; then
+  if [ -z "\''${QT_SCALE_FACTOR:-}" ]; then
+    export QT_SCALE_FACTOR="\$SUPERLUMINAL_SCALE"
+  fi
+  # QT_DEVICE_PIXEL_RATIO is deprecated and noisy on startup, so keep it opt-in
+  # for machines that really need Qt's legacy scaling path.
+  if [ -n "\''${SUPERLUMINAL_LEGACY_DEVICE_PIXEL_RATIO:-}" ] && [ -z "\''${QT_DEVICE_PIXEL_RATIO:-}" ]; then
+    export QT_DEVICE_PIXEL_RATIO="\$SUPERLUMINAL_SCALE"
+  fi
+  if [ -z "\''${QT_AUTO_SCREEN_SCALE_FACTOR:-}" ]; then
+    export QT_AUTO_SCREEN_SCALE_FACTOR=0
+  fi
+  if [ -z "\''${QT_FONT_DPI:-}" ]; then
+    case "\$SUPERLUMINAL_SCALE" in
+      1) export QT_FONT_DPI=96 ;;
+      1.25) export QT_FONT_DPI=120 ;;
+      1.5) export QT_FONT_DPI=144 ;;
+      1.75) export QT_FONT_DPI=168 ;;
+      2) export QT_FONT_DPI=192 ;;
+      2.5) export QT_FONT_DPI=240 ;;
+      3) export QT_FONT_DPI=288 ;;
+    esac
+  fi
+else
+  export QT_AUTO_SCREEN_SCALE_FACTOR="\''${QT_AUTO_SCREEN_SCALE_FACTOR:-1}"
+fi
+
+exec "$appDir/Superluminal" "\$@"
+EOF
+              chmod 0755 "$out/bin/superluminal"
+
               makeWrapper "$appDir/SuperluminalCmd" "$out/bin/superluminalcmd" "''${commonWrapperArgs[@]}"
               makeWrapper "$appDir/SuperluminalCaptureService" "$out/bin/superluminal-capture-service" "''${commonWrapperArgs[@]}"
               makeWrapper "$appDir/SuperluminalCrashReporter" "$out/bin/superluminal-crash-reporter" "''${commonWrapperArgs[@]}"

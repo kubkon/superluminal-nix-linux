@@ -46,6 +46,54 @@ nix profile install .#superluminal
 - `nix develop` provides patching/debugging tools such as `patchelf`, `file`, `scanelf`, `strace`, and `gdb`.
 - On non-NixOS systems, OpenGL may still require `nixGL` or another host-GL wrapper, depending on your graphics driver setup.
 
+## Qt / Wayland / scaling notes
+
+The upstream Linux alpha currently ships Qt's XCB platform plugin, but not Qt's Wayland platform plugin. The GUI wrapper therefore forces:
+
+```sh
+QT_QPA_PLATFORM=xcb
+```
+
+This avoids log messages like:
+
+```text
+qt.qpa.plugin: Could not find the Qt platform plugin "wayland" in ""
+```
+
+The wrapper also unsets `QT_STYLE_OVERRIDE` so host Qt themes such as `kvantum` are not applied to Superluminal's bundled Qt tree.
+
+If the GUI is still too small under Wayland/XWayland, use the Superluminal wrapper's convenience scale knob:
+
+```sh
+SUPERLUMINAL_SCALE=1.5 nix run
+```
+
+or:
+
+```sh
+SUPERLUMINAL_SCALE=2 nix run
+```
+
+This sets `QT_SCALE_FACTOR` and common `QT_FONT_DPI` values. If text is still too small, try overriding font DPI directly:
+
+```sh
+QT_FONT_DPI=192 nix run
+```
+
+or combine both:
+
+```sh
+SUPERLUMINAL_SCALE=2 QT_FONT_DPI=192 nix run
+```
+
+As a last-resort fallback for older Qt scaling behavior, the deprecated `QT_DEVICE_PIXEL_RATIO` path is available behind an explicit opt-in:
+
+```sh
+SUPERLUMINAL_SCALE=2 SUPERLUMINAL_LEGACY_DEVICE_PIXEL_RATIO=1 nix run
+```
+
+That mode may print a Qt deprecation warning.
+
 ## Capturing from the UI
 
 Superluminal's Linux known issues state that capturing from the UI requires a graphical PolicyKit agent. Without one, capture startup can fail with an unclear error.
