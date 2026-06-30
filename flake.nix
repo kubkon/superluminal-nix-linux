@@ -26,6 +26,7 @@
             dbus
             expat
             zlib
+            elfutils
 
             # OpenGL / EGL. On non-NixOS hosts this may still need nixGL or an
             # equivalent wrapper so libGL can reach the host graphics driver.
@@ -80,6 +81,14 @@
           ];
 
           runtimeLibraryPath = lib.makeLibraryPath runtimeLibs;
+          helperPath = lib.makeBinPath (with pkgs; [
+            coreutils
+            gnugrep
+            gawk
+            procps
+            util-linux
+            which
+          ]);
           dynamicLinker = pkgs.stdenv.cc.bintools.dynamicLinker;
 
           superluminal = pkgs.stdenvNoCC.mkDerivation {
@@ -119,6 +128,13 @@
               # Keep Nix build inputs out of the installed vendor payload.
               rm -f "$appDir/flake.nix" "$appDir/flake.lock"
 
+              # The GUI starts the capture service by its absolute path under
+              # opt/superluminal, bypassing the bin/ wrapper below. Keep a real
+              # patched binary next to a small environment/logging wrapper at the
+              # original path so spawned capture-service processes get the same
+              # Nix runtime environment as the GUI.
+              mv "$appDir/SuperluminalCaptureService" "$appDir/SuperluminalCaptureService.real"
+
               # Patch every ELF file we can find. Superluminal ships a large
               # bundle of executables, shared libraries, Qt plugins, and its own
               # slPlugins tree, so relying on top-level wrapper LD_LIBRARY_PATH is
@@ -139,11 +155,70 @@
                 fi
               done
 
+              cat > "$appDir/SuperluminalCaptureService" <<EOF
+#!${pkgs.runtimeShell}
+appDir="$appDir"
+export QT_PLUGIN_PATH="$appDir/Qt/plugins"
+export QT_XKB_CONFIG_ROOT="${pkgs.xkeyboard_config}/share/X11/xkb"
+export XDG_DATA_DIRS="${pkgs.gtk3}/share:${pkgs.gsettings-desktop-schemas}/share:${pkgs.hicolor-icon-theme}/share:\''${XDG_DATA_DIRS:-}"
+export LD_LIBRARY_PATH="${runtimeLibraryPath}:$appDir:$appDir/Qt/lib:\''${LD_LIBRARY_PATH:-}"
+export PATH="${helperPath}:\''${PATH:-}"
+
+logDir=""
+previousArg=""
+for arg in "\$@"; do
+  if [ "\$previousArg" = "--logFileDirectory" ]; then
+    logDir="\$arg"
+    break
+  fi
+
+  case "\$arg" in
+    --logFileDirectory=*)
+      logDir="\''${arg#--logFileDirectory=}"
+      break
+      ;;
+  esac
+
+  previousArg="\$arg"
+done
+
+if [ -z "\$logDir" ]; then
+  logDir="\''${SUPERLUMINAL_CAPTURE_WRAPPER_LOG_DIR:-\''${XDG_CONFIG_HOME:-\''${HOME:-/tmp}/.config}/Superluminal/Profiler}"
+fi
+
+if ! mkdir -p "\$logDir" 2>/dev/null; then
+  logDir="\''${TMPDIR:-/tmp}"
+fi
+logFile="\$logDir/CaptureService.wrapper.log"
+
+if { : >> "\$logFile"; } 2>/dev/null; then
+  {
+    echo "--- SuperluminalCaptureService wrapper ---"
+    date
+    echo "cwd: \$(pwd)"
+    echo "argv: \$0 \$*"
+    echo "PATH: \$PATH"
+    echo "pkexec: \$(command -v pkexec || true)"
+  } >> "\$logFile" 2>&1 || true
+
+  "\$appDir/SuperluminalCaptureService.real" "\$@" >> "\$logFile" 2>&1
+  status="\$?"
+  echo "exit status: \$status" >> "\$logFile" 2>&1 || true
+else
+  "\$appDir/SuperluminalCaptureService.real" "\$@"
+  status="\$?"
+fi
+
+exit "\$status"
+EOF
+              chmod 0755 "$appDir/SuperluminalCaptureService"
+
               commonWrapperArgs=(
                 --set QT_PLUGIN_PATH "$appDir/Qt/plugins"
                 --set QT_XKB_CONFIG_ROOT "${pkgs.xkeyboard_config}/share/X11/xkb"
                 --prefix XDG_DATA_DIRS : "${pkgs.gtk3}/share:${pkgs.gsettings-desktop-schemas}/share:${pkgs.hicolor-icon-theme}/share"
                 --prefix LD_LIBRARY_PATH : "${runtimeLibraryPath}:$appDir:$appDir/Qt/lib"
+                --prefix PATH : "${helperPath}"
               )
 
               makeWrapper "$appDir/Superluminal" "$out/bin/superluminal" "''${commonWrapperArgs[@]}"
@@ -174,12 +249,15 @@ EOF
               runHook preInstallCheck
 
               appDir="$out/opt/superluminal"
-              ${pkgs.glibc.bin}/bin/ldd \
-                "$appDir/Superluminal" \
-                "$appDir/SuperluminalCmd" \
-                "$appDir/SuperluminalCaptureService" \
-                "$appDir/SuperluminalCrashReporter" \
-                "$appDir/SuperluminalAutoUpdater" | tee ldd.log
+              find "$appDir" -type f \
+                \( -perm -0100 -o -name '*.so' -o -name '*.so.*' -o -name 'Superluminal*' \) \
+                -print0 |
+              while IFS= read -r -d "" elf; do
+                if patchelf --print-rpath "$elf" >/dev/null 2>&1; then
+                  echo "checking $elf"
+                  ${pkgs.glibc.bin}/bin/ldd "$elf"
+                fi
+              done | tee ldd.log
               if grep -q 'not found' ldd.log; then
                 echo "unresolved shared-library dependencies remain" >&2
                 exit 1
@@ -229,6 +307,7 @@ EOF
             dbus
             expat
             zlib
+            elfutils
             libglvnd
             mesa
             libdrm
