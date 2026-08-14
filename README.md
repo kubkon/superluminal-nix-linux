@@ -39,9 +39,37 @@ To install the wrapper scripts into your Nix profile:
 nix profile install .#superluminal
 ```
 
+## Releases
+
+Available releases are listed in `releases.json` and exported as versioned flake packages. Build or run a specific release using its version:
+
+```sh
+nix build '.#"1.0.7510.599-alpha"'
+```
+
+```sh
+nix run '.#"1.0.7510.599-alpha"'
+```
+
+`default`, `latest`, and `superluminal` all select the newest version in `releases.json`, as determined by Nix's version comparison:
+
+```sh
+nix build
+nix build .#latest
+nix build .#superluminal
+```
+
+When consuming this repository as a flake input, select the derivation through the package set:
+
+```nix
+superluminal.packages.${system}."1.0.7510.599-alpha"
+```
+
+To add a release, append its version, official archive URL, and fixed SHA-256 hash to `releases.json`. It automatically becomes `default`, `latest`, and `superluminal` when its version is newer than every existing entry.
+
 ## Notes
 
-- The package source is fetched from `https://superluminal.blob.core.windows.net/public-installers/SuperluminalLinux-1.0.7510.599-alpha.tar.gz` with a fixed SHA-256 hash.
+- Each entry in `releases.json` contains the official archive URL and its fixed SHA-256 hash.
 - `nix build` builds the package into the Nix store and creates a local `result` symlink; it does not install the package into your user profile.
 - `nix develop` provides patching/debugging tools such as `patchelf`, `file`, `scanelf`, `strace`, and `gdb`.
 - On non-NixOS systems, OpenGL may still require `nixGL` or another host-GL wrapper, depending on your graphics driver setup.

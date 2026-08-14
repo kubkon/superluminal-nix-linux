@@ -9,6 +9,7 @@
     let
       supportedSystems = [ "x86_64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      releases = builtins.fromJSON (builtins.readFile ./releases.json);
     in
     {
       packages = forAllSystems (system:
@@ -91,17 +92,16 @@
           ]);
           dynamicLinker = pkgs.stdenv.cc.bintools.dynamicLinker;
 
-          superluminal = pkgs.stdenvNoCC.mkDerivation {
+          mkSuperluminal = version: release: pkgs.stdenvNoCC.mkDerivation {
             pname = "superluminal";
-            version = "1.0.7510.599-alpha";
+            inherit version;
 
             # Fetch the official binary distribution instead of using ./. as
             # the source. In a Git flake, untracked files are intentionally not
             # included in the flake source, which makes packaging a locally
             # unpacked vendor bundle unreliable unless every binary is tracked.
             src = pkgs.fetchurl {
-              url = "https://superluminal.blob.core.windows.net/public-installers/SuperluminalLinux-1.0.7510.599-alpha.tar.gz";
-              hash = "sha256-fUcTGD6LvNtX0aQFeXJlMg4wdJmjyS8hJLGwsl3LZSo=";
+              inherit (release) url hash;
             };
 
             nativeBuildInputs = with pkgs; [
@@ -325,9 +325,22 @@ EOF
               mainProgram = "superluminal";
             };
           };
+
+          releasePackages = lib.mapAttrs
+            (version: release: mkSuperluminal version release.${system})
+            (lib.filterAttrs (_: release: builtins.hasAttr system release) releases);
+
+          latestVersion = lib.last (
+            builtins.sort
+              (left: right: builtins.compareVersions left right < 0)
+              (builtins.attrNames releasePackages)
+          );
+
+          superluminal = releasePackages.${latestVersion};
         in
-        {
+        releasePackages // {
           default = superluminal;
+          latest = superluminal;
           superluminal = superluminal;
         });
 
