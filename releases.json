@@ -1,0 +1,14 @@
+{
+  "1.0.7510.599-alpha": {
+    "x86_64-linux": {
+      "url": "https://superluminal.blob.core.windows.net/public-installers/SuperluminalLinux-1.0.7510.599-alpha.tar.gz",
+      "hash": "sha256-fUcTGD6LvNtX0aQFeXJlMg4wdJmjyS8hJLGwsl3LZSo="
+    }
+  },
+  "1.0.7515.603-alpha": {
+    "x86_64-linux": {
+      "url": "https://superluminal.blob.core.windows.net/public-installers/SuperluminalLinux-1.0.7515.603-alpha.tar.gz",
+      "hash": "sha256-kqWnxvH57EWYo77Efp95bsJD7jH028ip4fBnpw2MSOc="
+    }
+  }
+}
