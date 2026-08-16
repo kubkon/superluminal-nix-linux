@@ -128,12 +128,17 @@ Superluminal's Linux known issues state that capturing from the UI requires a gr
 
 On NixOS, make sure PolicyKit is enabled and that your desktop session starts an authentication agent. Desktop environments often do this for you; custom/window-manager sessions often do not.
 
+Starting with NixOS 26.11, enabling PolicyKit no longer enables the setuid `pkexec` wrapper by default. Superluminal uses `pkexec` to start its capture service with root privileges, so the wrapper must be enabled explicitly.
+
 For example, in a NixOS module:
 
 ```nix
 { pkgs, ... }:
 {
-  security.polkit.enable = true;
+  security.polkit = {
+    enable = true;
+    enablePkexecWrapper = true;
+  };
 
   systemd.user.services.polkit-gnome-authentication-agent-1 = {
     description = "PolicyKit authentication agent";
@@ -149,14 +154,18 @@ For example, in a NixOS module:
 }
 ```
 
-This flake does not package or install PolicyKit. On NixOS, configure PolicyKit system-wide instead. `pkexec` should normally resolve to the setuid host wrapper at `/run/wrappers/bin/pkexec`, and a graphical authentication agent must be running in your logged-in session.
+This flake does not package or install PolicyKit. On NixOS, configure PolicyKit system-wide instead. `pkexec` should resolve to the setuid host wrapper at `/run/wrappers/bin/pkexec`, and a graphical authentication agent must be running in your logged-in session.
 
 You can check the host-side requirements with:
 
 ```sh
 command -v pkexec
+ls -l /run/wrappers/bin/pkexec
+/run/wrappers/bin/pkexec id
 ps -eo pid,comm,args | grep -E 'polkit|PolicyKit|authentication-agent' | grep -v grep
 ```
+
+If `/run/wrappers/bin/pkexec` is missing and running `pkexec` prints `pkexec must be setuid root`, enable `security.polkit.enablePkexecWrapper` and rebuild the NixOS configuration. The non-setuid executable under `/run/current-system/sw/bin/pkexec` cannot elevate privileges on its own.
 
 If attach still fails, inspect:
 
@@ -166,4 +175,4 @@ If attach still fails, inspect:
 ~/.config/Superluminal/Profiler/CaptureService.wrapper.log
 ```
 
-If `SuperluminalPerformance.log` says the capture service exited with code `127` but `CaptureService.wrapper.log` is missing, the capture-service wrapper was probably never reached. On NixOS this usually means `pkexec` failed before exec'ing the wrapper, most commonly because no graphical PolicyKit authentication agent is running in the user session.
+If `SuperluminalPerformance.log` says the capture service exited with code `127` but `CaptureService.wrapper.log` has no entry for the attempt, the capture-service wrapper was never reached. Check that the setuid `pkexec` wrapper is enabled first, then check that a graphical PolicyKit authentication agent is running in the user session.
